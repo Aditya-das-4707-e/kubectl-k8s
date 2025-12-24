@@ -58,3 +58,8 @@ kubectl scale deployment.app/nginx-deployment -n nginx --replicas=5
 ```
 kubectl get pods -n nginx -o wide
 ```
+<p>To update image in deployment</p>
+
+```
+kubectl set image deployment/nginx-deployment -n nginx <image_name>=<version>
+```
