@@ -43,3 +43,8 @@ kubectl apply -f deployment.yml
 ```
 kubectl get deployment -n <namespace>
 ```
+<p>To see each pods</p>
+
+```
+kubectl get pods -n <namespace>
+```
