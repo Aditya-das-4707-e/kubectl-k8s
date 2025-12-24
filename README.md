@@ -1,5 +1,5 @@
-# Kubectl command 
-I make this file because this file easily accessable for everyone. 
+<h1>Kubectl command</h1> 
+<p>I make this file because this file easily accessable for everyone.</p>
 # First create node
 <p>First go kind-cluster folder and write this command to create node</p>
 
@@ -24,6 +24,21 @@ kubectl exec -it pod/<pod-name> -n <namespace> -- bash
 ```
 # To debug this pod and show everything
 ```
-kubectl describe pod/nginx-pod -n nginx
+kubectl describe pod/<pod-name> -n <namespace>
 ```
+# Deployment 
+<p>In deployment you first delete pod.yml file</p>
 
+```
+kubectl delete -f pod.yml
+```
+<p>Then you deploy</p>
+
+```
+kubectl apply -f deployment.yml
+```
+<p>To see deployment pods</p>
+
+```
+kubectl get deployment -n <namespace>
+```
