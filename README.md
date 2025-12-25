@@ -84,3 +84,19 @@ kubectl get replicasets -n <namespace>
 ```
 kubectl delete -f replicasets.yml
 ```
+# DaemonSets 
+<p>To apply daemonsets</p>
+
+```
+kubectl apply -f daemonsets.yml
+```
+<p>to see demonsets pods</p>
+
+```
+kubectl get pods -n nginx
+```
+<p>To delete deamonsets</p>
+
+```
+kubectl delete -f daemonsets.yml
+```
