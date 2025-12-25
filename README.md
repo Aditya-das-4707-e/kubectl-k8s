@@ -63,6 +63,11 @@ kubectl get pods -n nginx -o wide
 ```
 kubectl set image deployment/nginx-deployment -n nginx <container_name>=<image_name>:<version>
 ```
+<p>To delete deployment sets</p>
+
+```
+kubectl delete -f deployment.yml
+```
 # ReplicaSets (optional use only / education purpose)
 <p>To apply replicasets</p>
 
@@ -73,4 +78,9 @@ kubectl apply -f replicasets.yml
 
 ```
 kubectl get replicasets -n <namespace>
+```
+<p>To delete replicasets</p>
+
+```
+kubectl delete -f replicasets.yml
 ```
