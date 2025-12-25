@@ -121,3 +121,8 @@ kubectl get pods -n <namespace>
 ```
 kubectl logs pod/<job_name> -n <namespace>
 ```
+<p>To delete this job</p>
+
+```
+kubectl delete -f job.yml
+```
