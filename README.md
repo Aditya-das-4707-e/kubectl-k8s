@@ -116,3 +116,8 @@ kubectl get job -n <namespace>
 ```
 kubectl get pods -n <namespace>
 ```
+<p>To see the logs</p>
+
+```
+kubectl logs pod/<job_name> -n <namespace>
+```
