@@ -100,3 +100,10 @@ kubectl get pods -n nginx
 ```
 kubectl delete -f daemonsets.yml
 ```
+# Job
+<p>To apply job</p>
+
+```
+kubectl apply -f job.yml
+```
+
