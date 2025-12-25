@@ -93,7 +93,7 @@ kubectl apply -f daemonsets.yml
 <p>to see demonsets pods</p>
 
 ```
-kubectl get pods -n nginx
+kubectl get pods -n <namespace>
 ```
 <p>To delete deamonsets</p>
 
@@ -106,4 +106,13 @@ kubectl delete -f daemonsets.yml
 ```
 kubectl apply -f job.yml
 ```
+<p>To see job</p>
 
+```
+kubectl get job -n <namespace>
+```
+<p>To see pod</p>
+
+```
+kubectl get pods -n <namespace>
+```
