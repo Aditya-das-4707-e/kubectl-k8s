@@ -13,5 +13,5 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: local-storage
   hostPath:
-    path: /media/storage/kubernetes_temp
+    path: /media/storage/kubernetes_temp # Add your own storage path. Remember this is not your local computer storage path. This is your worker node docker container storage path. You can easily view it go inside this to go docker worker node container. 
   
