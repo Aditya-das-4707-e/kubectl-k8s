@@ -492,6 +492,8 @@ sudo -E kubectl port-forward service/ingress-nginx-controller -n ingress-nginx 8
 
 **Note:** If you see "port already in use" error, visit my [Port Cleanup Tool](https://github.com/Aditya-das-4707-e/Ghost-Port-Cleanup-Tool).
 
+**Ingress Example:** Visit [Dajango Notes App](https://github.com/Aditya-das-4707-e/django-notes-app-k8s).
+
 **Success!** Now you can access your apps through:
 - `http://localhost/nginx` for nginx app
 - `http://localhost/notes` for notes app
