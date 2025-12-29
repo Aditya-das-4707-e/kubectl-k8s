@@ -38,6 +38,18 @@ A StatefulSet is like a special manager for pods that need:
 
 ---
 
+## Architecture Overview
+
+Our MySQL deployment consists of five key components:
+
+1. **Namespace**: Isolated environment for MySQL resources
+2. **ConfigMap**: Non-sensitive configuration data (database name)
+3. **Secret**: Sensitive data (root password)
+4. **Service**: Network access to StatefulSet pods
+5. **StatefulSet**: Manages MySQL pods with persistent storage
+
+---
+
 ## Step 1: Create the Namespace
 
 ### What is a Namespace?
@@ -66,7 +78,128 @@ namespace/mysql created
 
 ---
 
-## Step 2: Create the Service
+## Step 2: Create the ConfigMap
+
+### What is a ConfigMap?
+A ConfigMap stores non-sensitive configuration data in key-value pairs. It's like a settings file that your application can read.
+
+### Command
+```bash
+kubectl apply -f configmap.yml
+```
+
+### What does this command do?
+- Creates a ConfigMap named `mysql-config-map` in the mysql namespace
+- Stores the database name (`devops`) that MySQL will automatically create
+- Makes this configuration available to your pods
+
+### Why use ConfigMaps?
+- **Separation of concerns**: Keep configuration separate from application code
+- **Easy updates**: Change configuration without rebuilding container images
+- **Reusability**: Share configuration across multiple pods
+- **Non-sensitive data**: Perfect for database names, feature flags, or URLs
+
+### Your ConfigMap Structure
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config-map
+  namespace: mysql
+data:
+  MYSQL_DATABASE: devops
+```
+
+### Expected Output
+```
+configmap/mysql-config-map created
+```
+
+### Verify the ConfigMap
+```bash
+kubectl get configmap -n mysql
+```
+
+You should see:
+```
+NAME               DATA   AGE
+mysql-config-map   1      10s
+```
+
+---
+
+## Step 3: Create the Secret
+
+### What is a Secret?
+A Secret stores sensitive data like passwords, tokens, or SSH keys in base64-encoded format. It's more secure than putting passwords directly in your YAML files.
+
+### Command
+```bash
+kubectl apply -f secrets.yml
+```
+
+### What does this command do?
+- Creates a Secret named `mysql-secret` in the mysql namespace
+- Stores the base64-encoded root password for MySQL
+- Keeps sensitive data encrypted at rest (if encryption is enabled in your cluster)
+
+### Why use Secrets?
+- **Security**: Passwords aren't visible in plain text in configuration files
+- **Access control**: You can restrict who can view Secrets
+- **Best practice**: Never hardcode passwords in YAML files
+- **Rotation**: Easy to update passwords without changing application code
+
+### Your Secret Structure
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: mysql
+type: Opaque
+data:
+  MYSQL_ROOT_PASSWORD: cm9vdAo=
+```
+
+### Understanding Base64 Encoding
+The password is base64-encoded, not encrypted. The value `cm9vdAo=` decodes to `root`.
+
+### How to encode your own password
+```bash
+echo -n 'your-password' | base64
+```
+
+**Important**: Use `-n` flag to avoid encoding a newline character!
+
+### Expected Output
+```
+secret/mysql-secret created
+```
+
+### Verify the Secret
+```bash
+kubectl get secret -n mysql
+```
+
+You should see:
+```
+NAME           TYPE     DATA   AGE
+mysql-secret   Opaque   1      5s
+```
+
+### View Secret Details (without revealing values)
+```bash
+kubectl describe secret mysql-secret -n mysql
+```
+
+### Decode the Secret (for verification)
+```bash
+kubectl get secret mysql-secret -n mysql -o jsonpath='{.data.MYSQL_ROOT_PASSWORD}' | base64 --decode
+```
+
+---
+
+## Step 4: Create the Service
 
 ### What is a Kubernetes Service?
 A service is like a phone number for your pods. Even if pods get replaced, the service provides a stable way to reach them.
@@ -81,14 +214,13 @@ kubectl apply -f service.yml
 - Provides network identity to each StatefulSet pod
 - Enables pod-to-pod communication using DNS names
 
-### Why create the service first?
+### Why create the service before StatefulSet?
 StatefulSets use the service to give each pod a unique DNS name like:
 - `mysql-statefulset-0.mysql-service.mysql.svc.cluster.local`
 - `mysql-statefulset-1.mysql-service.mysql.svc.cluster.local`
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl apply -f service.yml 
 service/mysql-service created
 ```
 
@@ -99,7 +231,7 @@ service/mysql-service created
 
 ---
 
-## Step 3: Create the StatefulSet
+## Step 5: Create the StatefulSet
 
 ### Command
 ```bash
@@ -110,22 +242,92 @@ kubectl apply -f statefulset.yml
 - Reads your `statefulset.yml` configuration
 - Creates MySQL pods one by one in order (0, then 1, then 2)
 - Attaches persistent storage to each pod
-- Sets up environment variables for MySQL
+- Injects environment variables from ConfigMap and Secret
 
-### Why use StatefulSet for databases?
-- **Data persistence**: Each pod gets its own storage that survives restarts
-- **Stable identity**: Pods keep the same name and network address
-- **Ordered deployment**: Ensures primary database starts before replicas
+### Key Changes in Updated StatefulSet
+The StatefulSet now uses ConfigMap and Secret instead of hardcoded values:
+
+**Before (hardcoded values):**
+```yaml
+env:
+  - name: MYSQL_ROOT_PASSWORD
+    value: root
+  - name: MYSQL_DATABASE
+    value: devops
+```
+
+**After (using ConfigMap and Secret):**
+```yaml
+env:
+  - name: MYSQL_ROOT_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: mysql-secret
+        key: MYSQL_ROOT_PASSWORD
+  - name: MYSQL_DATABASE
+    valueFrom: 
+      configMapKeyRef:
+        name: mysql-config-map
+        key: MYSQL_DATABASE
+```
+
+### Why this approach is better?
+- **Security**: Passwords are stored in Secrets, not visible in YAML files
+- **Flexibility**: Change configuration without modifying StatefulSet
+- **Best practice**: Follows Kubernetes security recommendations
+- **Maintainability**: Easier to manage in production environments
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl apply -f statefulset.yml 
 statefulset.apps/mysql-statefulset created
 ```
 
 ---
 
-## Step 4: Verify the Pods
+## Step 6: Verify All Resources
+
+### Check All Resources in Namespace
+```bash
+kubectl get all -n mysql
+```
+
+### Expected Output
+```
+NAME                      READY   STATUS    RESTARTS   AGE
+pod/mysql-statefulset-0   1/1     Running   0          3m8s
+pod/mysql-statefulset-1   1/1     Running   0          2m21s
+pod/mysql-statefulset-2   1/1     Running   0          95s
+
+NAME                    TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+service/mysql-service   ClusterIP   None         <none>        3306/TCP   5m
+
+NAME                                 READY   AGE
+statefulset.apps/mysql-statefulset   3/3     3m8s
+```
+
+### Verify ConfigMap and Secret
+```bash
+kubectl get configmap,secret -n mysql
+```
+
+### Expected Output
+```
+NAME                         DATA   AGE
+configmap/mysql-config-map   1      10m
+
+NAME                  TYPE     DATA   AGE
+secret/mysql-secret   Opaque   1      9m
+```
+
+### Understanding the Output
+- **Pods**: All three pods are running sequentially
+- **Service**: Headless service is available on port 3306
+- **StatefulSet**: 3/3 replicas are ready
+- **ConfigMap & Secret**: Both configuration resources are created
+
+---
+
+## Step 7: Verify the Pods
 
 ### Command
 ```bash
@@ -144,7 +346,6 @@ kubectl get pods -n mysql
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl get pods -n mysql 
 NAME                  READY   STATUS    RESTARTS   AGE
 mysql-statefulset-0   1/1     Running   0          3m8s
 mysql-statefulset-1   1/1     Running   0          2m21s
@@ -159,7 +360,7 @@ mysql-statefulset-2   1/1     Running   0          95s
 
 ---
 
-## Step 5: Check the Service
+## Step 8: Check the Service
 
 ### Command
 ```bash
@@ -173,7 +374,6 @@ Displays all services in the mysql namespace, showing how your pods can be acces
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl get svc -n mysql
 NAME            TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
 mysql-service   ClusterIP   None         <none>        3306/TCP   23m
 ```
@@ -194,7 +394,7 @@ For StatefulSets, we often use headless services because:
 
 ## Accessing a Pod
 
-### Step 6: List Available Pods
+### Step 9: List Available Pods
 
 ### Command
 ```bash
@@ -206,7 +406,6 @@ Shows you all available MySQL pods so you can choose which one to access.
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl get pods -n mysql
 NAME                  READY   STATUS    RESTARTS   AGE
 mysql-statefulset-0   1/1     Running   0          42m
 mysql-statefulset-1   1/1     Running   0          41m
@@ -215,7 +414,7 @@ mysql-statefulset-2   1/1     Running   0          40m
 
 ---
 
-### Step 7: Enter the Pod Shell
+### Step 10: Enter the Pod Shell
 
 ### Command
 ```bash 
@@ -239,7 +438,6 @@ Opens an interactive terminal session inside the specified pod, allowing you to 
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl exec -it mysql-statefulset-0 -n mysql -- bash
 bash-5.1# 
 ```
 
@@ -253,7 +451,7 @@ bash-5.1#
 
 ---
 
-### Step 8: Login to MySQL
+### Step 11: Login to MySQL
 
 Now that you're inside the pod, you need to connect to the MySQL database.
 
@@ -269,34 +467,57 @@ mysql -u root -p
 
 ### Finding the Password
 
-The password is defined in your `statefulset.yml` file in the environment variables section:
+The password is defined in your `secrets.yml` file (base64-encoded):
 
 ```yaml
-env:
-  - name: MYSQL_ROOT_PASSWORD
-    value: root 
+data:
+  MYSQL_ROOT_PASSWORD: cm9vdAo=
 ```
 
 **The password is:** `root`
 
-### Changing the Password
+### How the Password Gets to the Pod
 
-If you want to use a different password, edit the `statefulset.yml` file:
+The StatefulSet configuration references the Secret:
 
 ```yaml
 env:
   - name: MYSQL_ROOT_PASSWORD
-    value: admin 
+    valueFrom:
+      secretKeyRef:
+        name: mysql-secret
+        key: MYSQL_ROOT_PASSWORD
 ```
 
-Then reapply the configuration:
+Kubernetes automatically decodes the base64 value and injects it as an environment variable into the pod.
+
+### Changing the Password
+
+If you want to use a different password:
+
+1. Encode your new password:
 ```bash
-kubectl apply -f statefulset.yml
+echo -n 'mynewpassword' | base64
+```
+
+2. Update `secrets.yml` with the new encoded value:
+```yaml
+data:
+  MYSQL_ROOT_PASSWORD: bXluZXdwYXNzd29yZA==
+```
+
+3. Apply the updated Secret:
+```bash
+kubectl apply -f secrets.yml
+```
+
+4. Restart the StatefulSet pods for changes to take effect:
+```bash
+kubectl rollout restart statefulset mysql-statefulset -n mysql
 ```
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl exec -it mysql-statefulset-0 -n mysql -- bash
 bash-5.1# mysql -u root -p
 Enter password: 
 Welcome to the MySQL monitor.  Commands end with ; or \g.
@@ -320,7 +541,7 @@ mysql>
 
 ## Working with MySQL
 
-### Step 9: View Databases
+### Step 12: View Databases
 
 ### Command
 ```mysql
@@ -347,17 +568,30 @@ mysql> show databases;
 
 ### Why is 'devops' database there?
 
-Look at your `statefulset.yml` file environment variables:
+The database name comes from your ConfigMap:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config-map
+  namespace: mysql
+data:
+  MYSQL_DATABASE: devops
+```
+
+The StatefulSet reads this ConfigMap:
 
 ```yaml
 env:
-  - name: MYSQL_ROOT_PASSWORD
-    value: root 
   - name: MYSQL_DATABASE
-    value: devops
+    valueFrom: 
+      configMapKeyRef:
+        name: mysql-config-map
+        key: MYSQL_DATABASE
 ```
 
-The `MYSQL_DATABASE` variable automatically creates a database named 'devops' when MySQL starts!
+MySQL automatically creates the 'devops' database when the container starts!
 
 ### Common MySQL Commands
 
@@ -381,13 +615,19 @@ CREATE TABLE users (
 
 -- View table structure
 DESCRIBE users;
+
+-- Insert data
+INSERT INTO users VALUES (1, 'Alice');
+
+-- Query data
+SELECT * FROM users;
 ```
 
 ---
 
 ## Exiting the Pod
 
-### Step 10: Exit MySQL
+### Step 13: Exit MySQL
 
 ### Command
 ```mysql
@@ -406,7 +646,7 @@ bash-5.1#
 
 ---
 
-### Step 11: Exit the Pod Shell
+### Step 14: Exit the Pod Shell
 
 ### Command
 ```bash
@@ -427,9 +667,58 @@ aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$
 
 ---
 
+## Managing Configuration
+
+### Updating ConfigMap
+
+To change the database name:
+
+1. Edit `configmap.yml`:
+```yaml
+data:
+  MYSQL_DATABASE: production
+```
+
+2. Apply the changes:
+```bash
+kubectl apply -f configmap.yml
+```
+
+3. Restart pods to use new configuration:
+```bash
+kubectl rollout restart statefulset mysql-statefulset -n mysql
+```
+
+### Updating Secrets
+
+To change the root password:
+
+1. Encode new password:
+```bash
+echo -n 'newpassword' | base64
+```
+
+2. Update `secrets.yml` with the encoded value
+
+3. Apply and restart:
+```bash
+kubectl apply -f secrets.yml
+kubectl rollout restart statefulset mysql-statefulset -n mysql
+```
+
+### View Current Configuration in Pods
+
+Check environment variables inside a pod:
+
+```bash
+kubectl exec mysql-statefulset-0 -n mysql -- env | grep MYSQL
+```
+
+---
+
 ## Managing Pods
 
-## Deleting a Pod
+### Deleting a Pod
 
 ### Why Delete a Pod?
 - **Testing resilience**: Verify that StatefulSet recreates the pod
@@ -437,7 +726,7 @@ aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$
 - **Updating configuration**: Sometimes requires a fresh start
 - **Troubleshooting**: Eliminate problematic pods
 
-### Step 12: Choose a Pod to Delete
+### Step 15: Choose a Pod to Delete
 
 ### Command
 ```bash
@@ -454,7 +743,7 @@ mysql-statefulset-2   1/1     Running   0          58m
 
 ---
 
-### Step 13: Delete the Pod
+### Step 16: Delete the Pod
 
 ### Command
 ```bash
@@ -471,11 +760,11 @@ kubectl delete pod mysql-statefulset-0 -n mysql
 2. StatefulSet controller detects the missing pod
 3. **Automatically creates a new pod with the SAME name**
 4. The new pod attaches to the existing persistent storage
-5. Your data is preserved!
+5. ConfigMap and Secret are automatically injected again
+6. Your data is preserved!
 
 ### Expected Output
 ```
-aditya@Aditya:~/devops/kubernetes/kind-cluster/mysql$ kubectl delete pod mysql-statefulset-0 -n mysql
 pod "mysql-statefulset-0" deleted
 ```
 
@@ -497,7 +786,7 @@ mysql-statefulset-2   1/1     Running   0          58m
 ```
 
 ### Magic of StatefulSets!
-Unlike regular Deployments that would create a pod with a random name, StatefulSets recreate the exact same pod name (`mysql-statefulset-0`) and reconnect it to its original storage. Your database data is safe!
+Unlike regular Deployments that would create a pod with a random name, StatefulSets recreate the exact same pod name (`mysql-statefulset-0`) and reconnect it to its original storage. Your database data is safe, and all configuration from ConfigMap and Secret is automatically reapplied!
 
 ---
 
@@ -511,6 +800,14 @@ StatefulSets automatically create PVCs for each pod. Check them with:
 kubectl get pvc -n mysql
 ```
 
+Expected output:
+```
+NAME                       STATUS   VOLUME                                     CAPACITY   ACCESS MODES
+mysql-data-mysql-statefulset-0   Bound    pvc-abc123...   1Gi        RWO
+mysql-data-mysql-statefulset-1   Bound    pvc-def456...   1Gi        RWO
+mysql-data-mysql-statefulset-2   Bound    pvc-ghi789...   1Gi        RWO
+```
+
 Each pod has its own dedicated storage that persists even when the pod is deleted.
 
 ### Scaling StatefulSets
@@ -521,7 +818,10 @@ To change the number of replicas:
 kubectl scale statefulset mysql-statefulset --replicas=5 -n mysql
 ```
 
-This will add mysql-statefulset-3 and mysql-statefulset-4.
+This will add mysql-statefulset-3 and mysql-statefulset-4. New pods automatically:
+- Get their configuration from ConfigMap
+- Get their password from Secret
+- Create their own PVC for storage
 
 ### Updating StatefulSets
 
@@ -535,18 +835,81 @@ Pods are updated in **reverse order** (2, then 1, then 0) to minimize disruption
 
 ---
 
+## Deployment Order Summary
+
+When deploying, follow this specific order:
+
+1. **Namespace** - Creates the isolated environment
+2. **ConfigMap** - Non-sensitive configuration must exist before StatefulSet
+3. **Secret** - Sensitive data must exist before StatefulSet
+4. **Service** - Must exist before StatefulSet for DNS names
+5. **StatefulSet** - Last, as it depends on all above resources
+
+### Quick Deploy Script
+
+Create a file `deploy.sh`:
+
+```bash
+#!/bin/bash
+kubectl apply -f namespace.yml
+kubectl apply -f configmap.yml
+kubectl apply -f secrets.yml
+kubectl apply -f service.yml
+kubectl apply -f statefulset.yml
+
+echo "Waiting for pods to be ready..."
+kubectl wait --for=condition=ready pod -l app=mysql -n mysql --timeout=300s
+echo "MySQL StatefulSet deployed successfully!"
+```
+
+Make it executable and run:
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+---
+
 ## Troubleshooting Tips
 
 ### Pod Won't Start
+
+Check if ConfigMap and Secret exist:
+```bash
+kubectl get configmap,secret -n mysql
+```
 
 Check pod details:
 ```bash
 kubectl describe pod mysql-statefulset-0 -n mysql
 ```
 
+Look for errors related to missing ConfigMap or Secret:
+```
+Warning  Failed     Error: configmap "mysql-config-map" not found
+Warning  Failed     Error: secret "mysql-secret" not found
+```
+
 Check pod logs:
 ```bash
 kubectl logs mysql-statefulset-0 -n mysql
+```
+
+### Configuration Not Applied
+
+Verify ConfigMap contents:
+```bash
+kubectl get configmap mysql-config-map -n mysql -o yaml
+```
+
+Verify Secret contents (decoded):
+```bash
+kubectl get secret mysql-secret -n mysql -o jsonpath='{.data.MYSQL_ROOT_PASSWORD}' | base64 --decode
+```
+
+Check environment variables in running pod:
+```bash
+kubectl exec mysql-statefulset-0 -n mysql -- env | grep MYSQL
 ```
 
 ### Connection Issues
@@ -561,19 +924,90 @@ kubectl run -it --rm debug --image=mysql:8.0 --restart=Never -n mysql -- mysql -
 Check persistent volume claims:
 ```bash
 kubectl get pvc -n mysql
-kubectl describe pvc <pvc-name> -n mysql
+kubectl describe pvc mysql-data-mysql-statefulset-0 -n mysql
 ```
 
 ---
 
-## Best Practices
+## Security Best Practices
 
-1. **Always use persistent storage** for databases
-2. **Set resource limits** to prevent pods from consuming all cluster resources
-3. **Use secrets** for sensitive data like passwords (not plain text in YAML)
-4. **Regular backups** - StatefulSets persist data, but you still need backups
-5. **Monitor pod health** with liveness and readiness probes
-6. **Test disaster recovery** by deleting pods and verifying data persistence
+### 1. Use Secrets for Sensitive Data ✅
+You're already doing this! Passwords are stored in Secrets, not hardcoded.
+
+### 2. Enable Secret Encryption at Rest
+Ask your cluster admin to enable encryption for Secrets in etcd.
+
+### 3. Restrict Secret Access
+Use RBAC to limit who can view Secrets:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-reader
+  namespace: mysql
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list"]
+```
+
+### 4. Use Sealed Secrets or External Secret Managers
+Consider using tools like:
+- **Sealed Secrets**: Encrypt secrets in Git
+- **HashiCorp Vault**: Enterprise secret management
+- **AWS Secrets Manager** / **Azure Key Vault**: Cloud provider solutions
+
+### 5. Rotate Passwords Regularly
+Change the Secret value periodically and restart pods.
+
+### 6. Use Strong Passwords
+Never use `root` as a password in production! Use complex passwords:
+
+```bash
+# Generate a strong password
+openssl rand -base64 32
+```
+
+### 7. Limit Network Access
+Use NetworkPolicies to restrict which pods can access MySQL:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mysql-network-policy
+  namespace: mysql
+spec:
+  podSelector:
+    matchLabels:
+      app: mysql
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: application-namespace
+    ports:
+    - protocol: TCP
+      port: 3306
+```
+
+---
+
+## Best Practices Summary
+
+1. ✅ **Use Secrets** for sensitive data like passwords
+2. ✅ **Use ConfigMaps** for non-sensitive configuration
+3. ✅ **Always use persistent storage** for databases
+4. ✅ **Set resource limits** to prevent pods from consuming all cluster resources
+5. ✅ **Regular backups** - StatefulSets persist data, but you still need backups
+6. ✅ **Monitor pod health** with liveness and readiness probes
+7. ✅ **Test disaster recovery** by deleting pods and verifying data persistence
+8. ✅ **Follow deployment order**: Namespace → ConfigMap → Secret → Service → StatefulSet
+9. ✅ **Use strong passwords** and rotate them regularly
+10. ✅ **Implement RBAC** to control access to Secrets
 
 ---
 
@@ -582,11 +1016,18 @@ kubectl describe pvc <pvc-name> -n mysql
 To remove everything:
 
 ```bash
-# Delete the StatefulSet
+# Delete the StatefulSet (pods will be removed)
 kubectl delete statefulset mysql-statefulset -n mysql
 
 # Delete the Service
 kubectl delete service mysql-service -n mysql
+
+# Delete ConfigMap and Secret
+kubectl delete configmap mysql-config-map -n mysql
+kubectl delete secret mysql-secret -n mysql
+
+# Delete PVCs (this deletes your data!)
+kubectl delete pvc --all -n mysql
 
 # Delete the Namespace (removes everything inside)
 kubectl delete namespace mysql
@@ -594,33 +1035,69 @@ kubectl delete namespace mysql
 
 **Warning:** This will permanently delete all data unless you have backups!
 
+### Alternative: Delete Everything at Once
+
+```bash
+kubectl delete namespace mysql
+```
+
+This removes the namespace and everything inside it, including the StatefulSet, Service, ConfigMap, Secret, and PVCs.
+
 ---
 
 ## Summary
 
 You've learned how to:
 1. ✅ Create a namespace for organization
-2. ✅ Deploy a headless service for StatefulSet networking
-3. ✅ Create a MySQL StatefulSet with persistent storage
-4. ✅ Access and interact with MySQL pods
-5. ✅ Understand pod identity and data persistence
-6. ✅ Manage pods safely (delete and automatic recreation)
+2. ✅ Use ConfigMaps for non-sensitive configuration
+3. ✅ Use Secrets for sensitive data like passwords
+4. ✅ Deploy a headless service for StatefulSet networking
+5. ✅ Create a MySQL StatefulSet with persistent storage
+6. ✅ Access and interact with MySQL pods
+7. ✅ Understand pod identity and data persistence
+8. ✅ Manage pods safely (delete and automatic recreation)
+9. ✅ Update configuration without changing application code
+10. ✅ Follow security best practices
 
 ## Key Takeaways
 
 - **StatefulSets** maintain stable pod identities and persistent storage
+- **ConfigMaps** store non-sensitive configuration data
+- **Secrets** store sensitive data like passwords in base64-encoded format
+- **Separation of concerns**: Configuration is separate from application deployment
+- **Security**: Never hardcode passwords in YAML files
 - **Headless services** provide unique DNS names for each pod
 - **Pods are ordered** and created/deleted sequentially
 - **Data persists** even when pods are deleted and recreated
 - **Each pod** gets its own persistent volume
+- **Configuration is dynamic**: Update ConfigMaps and Secrets without changing StatefulSet
+
+---
+
+## File Structure
+
+Your final project structure should look like this:
+
+```
+mysql/
+├── namespace.yml
+├── configmap.yml
+├── secrets.yml
+├── service.yml
+├── statefulset.yml
+└── README.md
+```
 
 ---
 
 ## Additional Resources
 
 - [Kubernetes StatefulSet Documentation](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)
+- [Kubernetes ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
+- [Kubernetes Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)
 - [MySQL Docker Hub](https://hub.docker.com/_/mysql)
 - [Kubernetes Persistent Volumes](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
 - [StatefulSet Basics Tutorial](https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/)
+- [Security Best Practices for Kubernetes](https://kubernetes.io/docs/concepts/security/)
 
 ---
