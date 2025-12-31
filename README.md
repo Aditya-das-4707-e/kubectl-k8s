@@ -15,8 +15,9 @@ I created this file to make Kubernetes commands easily accessible for everyone l
 **Simple explanation:** Think of this as building a playground where your apps will live. Just like you need a playground before you can play, you need a cluster before you can run apps.
 
 ### Steps:
-1. Navigate to the `kind-cluster` folder
-2. Run this command:
+1. Install [Kind](https://github.com/Aditya-das-4707-e/install-kind-kubectl.sh)
+2. Navigate to the `kind-cluster` folder
+3. Run this command:
 
 ```bash
 kind create cluster --name <choose-a-name> --config=config.yml
